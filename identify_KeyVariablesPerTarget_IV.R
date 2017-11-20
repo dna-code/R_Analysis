@@ -17,6 +17,9 @@ stats
 remove(stats_mean)
 df$groupBy <- df$target
 stats_mean <- data_groupBy_summary(df)
+names(stats_mean) <- c("low_mean","high_mean","CoeffOfVariance_target","Variable")
+#special case
+stats_mean$ratio_good_bad_mean <- ifelse(stats_mean$high_mean!=0,stats_mean$low_mean/stats_mean$high_mean,NA)
 stats <- dplyr::full_join(stats,stats_mean,by=c("Variable"="Variable"))
 
 remove(stats_mean)
@@ -26,9 +29,13 @@ stats <- dplyr::full_join(stats,stats_mean,by=c("Variable"="Variable"))
 
 #function 3 <- select top variables
 stats <- stats %>% dplyr::mutate_all(funs(type.convert(as.character(.))))
-stats$keyVariable <- ifelse(  (stats$perc_missing+stats$perc_zero) < 0.8
-                              & stats$CoeffOfVariance.x > 0.05
-                                ,"Yes","No")
+stats$keyVariable <- ifelse(  ((stats$perc_missing+stats$perc_zero) < 0.8
+                              & stats$CoeffOfVariance_target > 0.05)
+                              | stats$ratio_good_bad_mean > 1.5 
+                              | stats$ratio_good_bad_mean < 0.5
+                                ,"Yes","No"
+                           )
+
 stats$Variable1 <- stats$Variable
 
 #######################
@@ -37,50 +44,29 @@ stats_iv <- iv.mult(df,"target",TRUE)
 iv.plot.summary(stats_iv)
 
 stats <- dplyr::full_join(stats,stats_iv,by=c("Variable"="Variable"))
-
+remove(stats_iv)
 keyVariableList <- select(filter(stats,keyVariable=="Yes" | Strength=="Strong"),Variable)
 keyVariableList <- as.array(keyVariableList$Variable)
 
 options(digits=2)
 stats_woe <- iv.mult(df,"target",vars=keyVariableList)
-stats_woe1<- as.data.frame(stats_woe)
+stats_woe <- iv.mult(df,"target",vars=keyVariableList)
 
 iv.plot.woe(iv.mult(df,"target",vars=keyVariableList,summary=FALSE))
 
-
-#### OLD CODE
-stats_groupBy <- df %>% 
-  group_by(groupBy) %>%   ##group by if needed
-  summarise_all(funs(count=n()
-                      ,mean(.,na.rm=TRUE)
-                      ,median(., na.rm=TRUE)
-                      ,std_dev = sd(.,na.rm=T)
-  ))
-
-
-stats_groupBy <- df %>% 
-  group_by(groupBy) %>%   ##group by if needed
-  summarise_each(funs(min(., na.rm=TRUE),mean(., na.rm=TRUE)
-                      ,median(., na.rm=TRUE)
-                      ,max(., na.rm=TRUE)
-                      ,count=n()
-                      ,q_05 = quantile(.,probs = 0.05,na.rm=T)
-                      ,q_25 = quantile(.,probs = 0.25,na.rm=T)
-                      ,q_50 = quantile(.,probs = 0.5,na.rm=T)
-                      ,q_75 = quantile(.,probs = 0.75,na.rm=T)
-                      ,q_95 = quantile(.,probs = 0.95,na.rm=T)  
-                      ,count_missing = sum(is.na(.), na.rm = TRUE)
-                      ,count_zeros   = sum(abs(.) <= 0.000001, na.rm=TRUE)
-                      ,count_neg_spl   =sum(.<0 & .>-10 , na.rm=TRUE)
-                      ,count_999_spl   =sum(.==999 , na.rm=TRUE)
-                      ,num_unique  = length(unique(.[!is.na(.)], na.rm = TRUE))
-                      ,std_dev = sd(.,na.rm=T)
-  ))
-
-stats$count <- as.numeric(as.character(stats$count))
-stats$perc_missing <- as.numeric(as.character(stats$count_missing))/stats$count
-stats$perc_zero <- as.numeric(as.character(stats$count_zeros))/stats$count
-stats$perc_neg_spl <- as.numeric(as.character(stats$count_neg_spl))/stats$count
-stats$perc_999_spl <- as.numeric(as.character(stats$count_999_spl))/stats$count
-
-
+stats_woe_ds <-stats_woe[1][[1]]
+if("sql" %in% colnames(stats_woe_ds))
+{
+  stats_woe_ds <- select(stats_woe_ds,-sql)
+}
+for (i in 2:length(stats_woe))
+{
+  if("sql" %in% colnames(stats_woe[i][[1]]))
+  {
+    stats_woe[i][[1]] <- select(stats_woe[i][[1]],-sql)
+  }
+  stats_woe_ds <- rbind(stats_woe_ds,stats_woe[i][[1]])
+}
+remove(stats_woe)
+write.csv(stats,row.names=F)
+write.csv(stats_woe_ds,row.names=F)
