@@ -50,7 +50,6 @@ keyVariableList <- as.array(keyVariableList$Variable)
 
 options(digits=2)
 stats_woe <- iv.mult(df,"target",vars=keyVariableList)
-stats_woe <- iv.mult(df,"target",vars=keyVariableList)
 
 iv.plot.woe(iv.mult(df,"target",vars=keyVariableList,summary=FALSE))
 
@@ -67,6 +66,11 @@ for (i in 2:length(stats_woe))
   }
   stats_woe_ds <- rbind(stats_woe_ds,stats_woe[i][[1]])
 }
+totalPop <- nrow(df)
+stats_woe_ds$groupPerc <- (stats_woe_ds$outcome_0+stats_woe_ds$outcome_1)/totalPop
+stats_woe_ds <- dplyr::left_join(stats_woe_ds
+                                 ,select(stats,Variable,InformationValue,CoeffOfVariance_target,ratio_good_bad_mean)
+                                 ,by=c("variable"="Variable"))
 remove(stats_woe)
 write.csv(stats,row.names=F)
 write.csv(stats_woe_ds,row.names=F)
